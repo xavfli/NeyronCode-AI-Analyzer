@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="uz">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NeyronCode | AI Analyzer</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body class="auth-loading">
+    <section class="login-screen" id="loginScreen">
+      <form class="login-card" id="loginForm">
+        <span class="brand-mark">N</span>
+        <p class="eyebrow">NEYRONCODE</p>
+        <h1>Tizimga kirish</h1>
+        <label>
+          <span>Login</span>
+          <input id="loginUsername" name="username" autocomplete="username" required />
+        </label>
+        <label>
+          <span>Parol</span>
+          <input id="loginPassword" name="password" type="password" autocomplete="current-password" required />
+        </label>
+        <p class="login-error" id="loginError"></p>
+        <button class="primary-button" type="submit">Kirish</button>
+      </form>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
+      <aside class="sidebar" aria-label="Asosiy menyu">
+        <a class="brand" href="/dashboard" data-link aria-label="NeyronCode bosh sahifa">
+          <span class="brand-mark">N</span>
+          <span>
+            <strong>NeuroCode</strong>
+            <small>AI Analyzer</small>
+          </span>
+        </a>
+
+        <nav class="nav-list">
+          <a class="nav-item active" href="/dashboard" data-link data-route="/dashboard"><span class="nav-icon">⌘</span>Dashboard</a>
+          <a class="nav-item" href="/code-analysis" data-link data-route="/code-analysis"><span class="nav-icon">◇</span>Kod tahlili</a>
+          <a class="nav-item" href="/security" data-link data-route="/security"><span class="nav-icon">◆</span>Xavfsizlik</a>
+          <a class="nav-item" href="/optimization" data-link data-route="/optimization"><span class="nav-icon">△</span>Optimallashtirish</a>
+          <a class="nav-item" href="/reports" data-link data-route="/reports"><span class="nav-icon">◎</span>Hisobotlar</a>
+        </nav>
+
+        <div class="user-card">
+          <span>Foydalanuvchi</span>
+          <strong id="userName">admin</strong>
+          <button class="ghost-button compact" id="logoutBtn" type="button">Chiqish</button>
+        </div>
+      </aside>
+
+      <main class="workspace">
+        <section class="page hero-section active" data-page="/dashboard">
+          <header class="topbar">
+            <div>
+              <p class="eyebrow">NEYRON TIL MODELI ASOSIDA</p>
+              <h1>Aqlli kod tahlili va optimallashtirish tizimi</h1>
+            </div>
+            <div class="top-actions">
+              <label class="ghost-button" for="fileInput">Loyiha yuklash</label>
+              <button class="primary-button" id="runTop">Tahlilni boshlash</button>
+            </div>
+          </header>
+
+          <div class="dashboard-grid">
+            <article class="overview-card">
+              <div class="overview-copy">
+                <span class="pill">AI code review platform</span>
+                <h2>Kodingizni tekshiring, tushuntiring va tezroq qiling.</h2>
+                <p>Tizim koddagi xatolar, xavfsizlik zaifliklari, murakkablik va optimallashtirish imkoniyatlarini aniqlaydi.</p>
+              </div>
+              <div class="score-orbit" id="scoreOrbit" style="--score: 54">
+                <strong id="scoreValue">54</strong>
+                <span>/ 100</span>
+              </div>
+            </article>
+
+            <article class="live-card">
+              <div class="card-kicker">LIVE ANALYZE</div>
+              <div class="live-title">
+                <strong id="liveFile">Python sample.py</strong>
+                <span class="pulse"></span>
+              </div>
+              <pre class="code-window"><span class="window-dots"></span><code id="samplePreview">def calculate_total(items):
+    total = 0
+    for item in items:
+        total = total + item["price"]
+    return total
+
+print(calculate_total(cart))</code></pre>
+            </article>
+          </div>
+
+          <section class="feature-section">
+            <p class="eyebrow">TIZIM IMKONIYATLARI</p>
+            <h2>Taklif qilinadigan funksiyalar</h2>
+            <div class="feature-grid">
+              <a class="feature-card feature-link" href="/code-analysis" data-link>
+                <span class="feature-index cyan">01</span>
+                <h3>Kod tahlili moduli</h3>
+                <p>Koddagi xatolar, murakkablik, takrorlanish, nomlash va standartlarga moslik tekshiriladi.</p>
+              </a>
+              <a class="feature-card feature-link" href="/reports" data-link>
+                <span class="feature-index violet">02</span>
+                <h3>Neyron model asosida tushuntirish</h3>
+                <p>AI kod nima qilayotganini oddiy tilda tushuntiradi va yangi dasturchilar uchun izoh beradi.</p>
+              </a>
+              <a class="feature-card feature-link" href="/optimization" data-link>
+                <span class="feature-index green">03</span>
+                <h3>Optimallashtirish moduli</h3>
+                <p>Kodning tezroq, qisqaroq va o'qilishi osonroq variantlari taklif qilinadi.</p>
+              </a>
+              <a class="feature-card feature-link" href="/security" data-link>
+                <span class="feature-index amber">04</span>
+                <h3>Xavfsizlik tahlili</h3>
+                <p>SQL injection, XSS, hardcoded password va autentifikatsiya muammolarini aniqlaydi.</p>
+              </a>
+              <a class="feature-card feature-link" href="/reports" data-link>
+                <span class="feature-index cyan">05</span>
+                <h3>Kod sifatini baholash</h3>
+                <p>Har bir fayl yoki loyiha uchun 0 dan 100 gacha sifat balli chiqariladi.</p>
+              </a>
+              <a class="feature-card feature-link" href="/reports" data-link>
+                <span class="feature-index rose">06</span>
+                <h3>Avtomatik tavsiya generatori</h3>
+                <p>Har bir topilgan muammo uchun sabab, xavf darajasi va amaliy yechim beriladi.</p>
+              </a>
+            </div>
+          </section>
+        </section>
+
+        <section class="page" data-page="/code-analysis">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">KOD TAHLILI</p>
+              <h1>Python kodini tekshirish</h1>
+              <p>Kodni kiriting yoki `.py` fayl yuklang, tizim sintaksis, sifat, murakkablik va xavfsizlik muammolarini chiqaradi.</p>
+            </div>
+            <div class="top-actions">
+              <label class="ghost-button" for="fileInput">Fayl yuklash</label>
+              <button class="primary-button" data-run-analysis>Tahlil qilish</button>
+            </div>
+          </header>
+
+          <div class="work-grid">
+            <article class="editor-card">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">EDITOR</span>
+                  <h2>Kodni kiriting</h2>
+                </div>
+                <span class="language-badge">Python</span>
+              </div>
+              <textarea id="codeInput" spellcheck="false"></textarea>
+              <div class="editor-actions">
+                <label class="toggle">
+                  <input id="useModel" type="checkbox" checked />
+                  <span></span>
+                  LLM xulosa
+                </label>
+                <button class="ghost-button compact" id="sampleBtn">Namuna</button>
+                <button class="primary-button compact" id="runAnalyze">Tahlil qilish</button>
+              </div>
+            </article>
+
+            <article class="result-card">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">NATIJA</span>
+                  <h2>AI xulosasi</h2>
+                </div>
+                <span class="status-chip" id="statusChip">Tahlil tayyor</span>
+              </div>
+              <p class="summary" id="summaryText">Kod namunasi tahlilga tayyor. Natijalar shu yerda ko'rinadi.</p>
+              <div class="metric-grid">
+                <div><span id="lineMetric">0</span><small>qator</small></div>
+                <div><span id="issueMetric">0</span><small>muammo</small></div>
+                <div><span id="complexityMetric">0</span><small>complexity</small></div>
+              </div>
+              <div class="findings-list" id="findingsList"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" data-page="/security">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">XAVFSIZLIK</p>
+              <h1>Kod xavfsizligi auditi</h1>
+              <p>Hardcoded secret, SQL injection, xavfli subprocess, debug rejimi va TLS muammolari alohida ro'yxatlanadi.</p>
+            </div>
+            <button class="primary-button" data-run-analysis>Qayta tekshirish</button>
+          </header>
+
+          <div class="insight-grid">
+            <article class="panel stat-panel">
+              <span class="card-kicker">SECURITY SCORE</span>
+              <strong id="securityScore">100</strong>
+              <p id="securityStatus">Xavfsizlik tahlili tayyor.</p>
+            </article>
+            <article class="panel stat-panel">
+              <span class="card-kicker">CRITICAL</span>
+              <strong id="criticalMetric">0</strong>
+              <p>Darhol tuzatish kerak bo'lgan zaifliklar.</p>
+            </article>
+            <article class="panel stat-panel">
+              <span class="card-kicker">HIGH</span>
+              <strong id="highMetric">0</strong>
+              <p>Production uchun xavfli holatlar.</p>
+            </article>
+          </div>
+
+          <article class="panel page-panel">
+            <div class="section-heading">
+              <div>
+                <span class="card-kicker">TOPILMALAR</span>
+                <h2>Xavfsizlik muammolari</h2>
+              </div>
+              <span class="status-chip" id="securityIssueMetric">0 muammo</span>
+            </div>
+            <div class="findings-list tall" id="securityFindingsList"></div>
+          </article>
+        </section>
+
+        <section class="page" data-page="/optimization">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">OPTIMALLASHTIRISH</p>
+              <h1>Kodni tezroq va o'qilishi osonroq qilish</h1>
+              <p>Tizim takrorlanish, uzun funksiyalar, chuqur sikllar va soddalashtiriladigan Python ifodalarini ajratib ko'rsatadi.</p>
+            </div>
+            <button class="primary-button" data-run-analysis>Takliflarni yangilash</button>
+          </header>
+
+          <div class="analysis-section compact-section">
+            <article class="panel">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">OPTIMIZED</span>
+                  <h2>Taklif qilingan kod</h2>
+                </div>
+                <button class="ghost-button compact" id="copyOptimized">Nusxa olish</button>
+              </div>
+              <pre class="optimized-window"><code id="optimizedOutput">Tahlildan keyin optimallashtirilgan parcha shu yerda chiqadi.</code></pre>
+            </article>
+
+            <article class="panel">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">TAVSIYALAR</span>
+                  <h2>Optimallashtirish rejasi</h2>
+                </div>
+                <span class="status-chip" id="optimizationStatus">Kutilmoqda</span>
+              </div>
+              <div class="suggestions-list" id="optimizationSuggestions"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" data-page="/reports">
+          <header class="page-header">
+            <div>
+              <p class="eyebrow">HISOBOTLAR</p>
+              <h1>Tahlil hisoboti</h1>
+              <p>Umumiy sifat balli, metriclar, topilmalar va model xulosasi bitta sahifada jamlanadi.</p>
+            </div>
+            <button class="primary-button" data-run-analysis>Hisobotni yangilash</button>
+          </header>
+
+          <div class="report-grid">
+            <article class="panel stat-panel">
+              <span class="card-kicker">SIFAT BALLI</span>
+              <strong id="reportScore">54</strong>
+              <p>0 dan 100 gacha umumiy baho.</p>
+            </article>
+            <article class="panel stat-panel">
+              <span class="card-kicker">QATORLAR</span>
+              <strong id="reportLines">0</strong>
+              <p>Tahlil qilingan Python kod qatori.</p>
+            </article>
+            <article class="panel stat-panel">
+              <span class="card-kicker">MUAMMOLAR</span>
+              <strong id="reportIssues">0</strong>
+              <p>Critical, high, medium va low topilmalar.</p>
+            </article>
+          </div>
+
+          <div class="analysis-section compact-section">
+            <article class="panel">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">MODEL</span>
+                  <h2>Neyron xulosa</h2>
+                </div>
+                <span class="status-chip" id="modelStatus">Kutilmoqda</span>
+              </div>
+              <div class="model-output" id="modelOutput">Qoidaviy analiz doim ishlaydi. Ollama yoqilgan bo'lsa, model xulosasi ham qo'shiladi.</div>
+            </article>
+
+            <article class="panel">
+              <div class="section-heading">
+                <div>
+                  <span class="card-kicker">RO'YXAT</span>
+                  <h2>Barcha topilmalar</h2>
+                </div>
+                <span class="status-chip" id="reportStatus">Tahlil tayyor</span>
+              </div>
+              <div class="findings-list tall" id="reportFindingsList"></div>
+            </article>
+          </div>
+
+          <article class="panel page-panel">
+            <div class="section-heading">
+              <div>
+                <span class="card-kicker">SAQLANGAN</span>
+                <h2>Qilingan ishlar</h2>
+              </div>
+              <span class="status-chip" id="historyStatus">0 yozuv</span>
+            </div>
+            <div class="history-list" id="historyList"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <input id="fileInput" type="file" accept=".py,.txt" hidden />
+    <script src="/static/app.js"></script>
+  </body>
+</html>
