@@ -1,0 +1,8 @@
+# Tashqi Python paketlar talab qilinmaydi.
+# Loyiha Python standard library bilan ishlaydi.
+#
+# Tavsiya:
+# Python 3.12+
+#
+# Ollama alohida desktop/CLI dastur sifatida o'rnatiladi:
+# https://ollama.com

@@ -157,7 +157,7 @@ print(calculate_total(cart))</code></pre>
                 <label class="toggle">
                   <input id="useModel" type="checkbox" checked />
                   <span></span>
-                  LLM xulosa
+                  Ollama AI tavsiya
                 </label>
                 <button class="ghost-button compact" id="sampleBtn">Namuna</button>
                 <button class="primary-button compact" id="runAnalyze">Tahlil qilish</button>
@@ -177,6 +177,13 @@ print(calculate_total(cart))</code></pre>
                 <div><span id="lineMetric">0</span><small>qator</small></div>
                 <div><span id="issueMetric">0</span><small>muammo</small></div>
                 <div><span id="complexityMetric">0</span><small>complexity</small></div>
+              </div>
+              <div class="filter-bar" aria-label="Topilmalarni filterlash">
+                <button class="filter-button active" type="button" data-severity-filter="all">Barchasi</button>
+                <button class="filter-button" type="button" data-severity-filter="critical">Critical</button>
+                <button class="filter-button" type="button" data-severity-filter="high">High</button>
+                <button class="filter-button" type="button" data-severity-filter="medium">Medium</button>
+                <button class="filter-button" type="button" data-severity-filter="low">Low</button>
               </div>
               <div class="findings-list" id="findingsList"></div>
             </article>
@@ -265,7 +272,11 @@ print(calculate_total(cart))</code></pre>
               <h1>Tahlil hisoboti</h1>
               <p>Umumiy sifat balli, metriclar, topilmalar va model xulosasi bitta sahifada jamlanadi.</p>
             </div>
-            <button class="primary-button" data-run-analysis>Hisobotni yangilash</button>
+            <div class="top-actions">
+              <button class="ghost-button" id="exportMarkdown" type="button">Markdown</button>
+              <button class="ghost-button" id="exportJson" type="button">JSON</button>
+              <button class="primary-button" data-run-analysis>Hisobotni yangilash</button>
+            </div>
           </header>
 
           <div class="report-grid">
@@ -290,12 +301,16 @@ print(calculate_total(cart))</code></pre>
             <article class="panel">
               <div class="section-heading">
                 <div>
-                  <span class="card-kicker">MODEL</span>
-                  <h2>Neyron xulosa</h2>
+                  <span class="card-kicker">OLLAMA</span>
+                  <h2>AI tavsiya</h2>
                 </div>
-                <span class="status-chip" id="modelStatus">Kutilmoqda</span>
+                <div class="mini-actions">
+                  <span class="status-chip" id="modelStatus">Kutilmoqda</span>
+                  <button class="ghost-button compact" id="checkOllama" type="button">Status</button>
+                </div>
               </div>
-              <div class="model-output" id="modelOutput">Qoidaviy analiz doim ishlaydi. Ollama yoqilgan bo'lsa, model xulosasi ham qo'shiladi.</div>
+              <p class="summary" id="ollamaStatusText">Ollama statusi tekshirilmagan.</p>
+              <div class="model-output" id="modelOutput">Qoidaviy analiz doim ishlaydi. Ollama yoqilgan bo'lsa, AI tavsiyalar ham qo'shiladi.</div>
             </article>
 
             <article class="panel">
@@ -316,7 +331,10 @@ print(calculate_total(cart))</code></pre>
                 <span class="card-kicker">SAQLANGAN</span>
                 <h2>Qilingan ishlar</h2>
               </div>
-              <span class="status-chip" id="historyStatus">0 yozuv</span>
+              <div class="mini-actions">
+                <span class="status-chip" id="historyStatus">0 yozuv</span>
+                <button class="ghost-button compact" id="clearHistory" type="button">Tozalash</button>
+              </div>
             </div>
             <div class="history-list" id="historyList"></div>
           </article>

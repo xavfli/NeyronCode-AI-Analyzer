@@ -55,6 +55,11 @@ const els = {
   reportFindingsList: qs("#reportFindingsList"),
   historyStatus: qs("#historyStatus"),
   historyList: qs("#historyList"),
+  exportJson: qs("#exportJson"),
+  exportMarkdown: qs("#exportMarkdown"),
+  checkOllama: qs("#checkOllama"),
+  ollamaStatusText: qs("#ollamaStatusText"),
+  clearHistory: qs("#clearHistory"),
 };
 
 let currentFilename = "sample.py";
@@ -63,6 +68,7 @@ let historyCache = [];
 let isAuthenticated = false;
 let lastResult = null;
 let saveTimer = null;
+let severityFilter = "all";
 
 function normalizeRoute(pathname) {
   if (pathname === "/" || pathname === "/index.html" || pathname === "/login") return "/dashboard";
@@ -283,6 +289,35 @@ async function loadHistory() {
   renderHistory(historyCache);
 }
 
+async function checkOllamaStatus() {
+  els.ollamaStatusText.textContent = "Ollama tekshirilmoqda...";
+  try {
+    const data = await api("/api/ollama/status");
+    const modelText = data.models?.length ? `Modellar: ${data.models.join(", ")}` : "Model topilmadi.";
+    els.ollamaStatusText.textContent = `${data.message} Tanlangan model: ${data.selected_model}. ${modelText}`;
+    els.modelStatus.textContent = data.model_ready ? "Model tayyor" : data.ok ? "Model yuklanmagan" : "Ollama yo'q";
+  } catch (error) {
+    els.ollamaStatusText.textContent = error.message;
+  }
+}
+
+async function deleteHistoryItem(id) {
+  if (!window.confirm("Bu tarix yozuvini o'chirasizmi?")) return;
+  const data = await api("/api/history/delete", {
+    method: "POST",
+    body: JSON.stringify({ id }),
+  });
+  historyCache = data.history || [];
+  renderHistory(historyCache);
+}
+
+async function clearHistory() {
+  if (!window.confirm("Barcha saqlangan ishlarni tozalaysizmi?")) return;
+  const data = await api("/api/history/clear", { method: "POST", body: "{}" });
+  historyCache = data.history || [];
+  renderHistory(historyCache);
+}
+
 function renderResult(data) {
   lastResult = data;
   const findings = data.findings || [];
@@ -367,7 +402,10 @@ function renderHistory(history) {
         <span>${escapeHtml(formatDate(entry.created_at))} · ${Number(entry.issue_count || 0)} muammo</span>
         <span>${escapeHtml(entry.summary || "")}</span>
       </div>
-      <button class="ghost-button compact" type="button" data-history-id="${escapeHtml(entry.id)}">Ochish</button>
+      <div class="history-actions">
+        <button class="ghost-button compact" type="button" data-history-id="${escapeHtml(entry.id)}">Ochish</button>
+        <button class="ghost-button compact" type="button" data-delete-history-id="${escapeHtml(entry.id)}">O'chirish</button>
+      </div>
     `;
     els.historyList.appendChild(item);
   });
@@ -384,6 +422,55 @@ function openHistoryItem(id) {
   queueSaveWork();
 }
 
+function exportReport(format) {
+  if (!lastResult) {
+    window.alert("Avval kodni tahlil qiling.");
+    return;
+  }
+  const baseName = (currentFilename || "report").replace(/[^a-z0-9_.-]+/gi, "_");
+  if (format === "json") {
+    downloadText(`${baseName}.neyron-report.json`, JSON.stringify(lastResult, null, 2), "application/json");
+    return;
+  }
+  const findings = lastResult.findings || [];
+  const lines = [
+    `# NeyronCode Hisobot`,
+    ``,
+    `Fayl: ${lastResult.filename || currentFilename}`,
+    `Ball: ${lastResult.score}/100`,
+    `Holat: ${statusLabel(lastResult.status)}`,
+    ``,
+    `## Xulosa`,
+    lastResult.summary || "Xulosa yo'q.",
+    ``,
+    `## Topilmalar`,
+    findings.length ? "" : "Muammo topilmadi.",
+  ];
+  findings.forEach((finding, index) => {
+    lines.push(
+      `${index + 1}. ${finding.title}`,
+      `   - Daraja: ${finding.severity}`,
+      `   - Kategoriya: ${finding.category}`,
+      `   - Qator: ${finding.line || "umumiy"}`,
+      `   - Izoh: ${finding.detail}`,
+      `   - Yechim: ${finding.fix}`,
+      ``,
+    );
+  });
+  lines.push(`## AI Tavsiya`, lastResult.model_summary || fallbackModelText(lastResult));
+  downloadText(`${baseName}.neyron-report.md`, lines.join("\n"), "text/markdown");
+}
+
+function downloadText(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function fallbackModelText(data) {
   const suggestions = data.suggestions || [];
   if (!suggestions.length) {
@@ -394,11 +481,13 @@ function fallbackModelText(data) {
 
 function renderFindings(container, findings, emptyTitle, emptyText) {
   container.innerHTML = "";
-  if (!findings || findings.length === 0) {
+  const visibleFindings =
+    severityFilter === "all" ? findings || [] : (findings || []).filter((finding) => finding.severity === severityFilter);
+  if (!visibleFindings || visibleFindings.length === 0) {
     container.appendChild(emptyFinding(emptyTitle, emptyText));
     return;
   }
-  findings.slice(0, 20).forEach((finding) => {
+  visibleFindings.forEach((finding) => {
     container.appendChild(findingNode(finding));
   });
 }
@@ -482,11 +571,31 @@ els.loginForm.addEventListener("submit", async (event) => {
 });
 
 els.logoutBtn.addEventListener("click", logout);
+els.exportJson.addEventListener("click", () => exportReport("json"));
+els.exportMarkdown.addEventListener("click", () => exportReport("markdown"));
+els.checkOllama.addEventListener("click", checkOllamaStatus);
+els.clearHistory.addEventListener("click", clearHistory);
 
 document.addEventListener("click", (event) => {
+  const filterButton = event.target.closest("[data-severity-filter]");
+  if (filterButton) {
+    severityFilter = filterButton.dataset.severityFilter;
+    qsa("[data-severity-filter]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.severityFilter === severityFilter);
+    });
+    if (lastResult) renderResult(lastResult);
+    return;
+  }
+
   const historyButton = event.target.closest("[data-history-id]");
   if (historyButton) {
     openHistoryItem(historyButton.dataset.historyId);
+    return;
+  }
+
+  const deleteHistoryButton = event.target.closest("[data-delete-history-id]");
+  if (deleteHistoryButton) {
+    deleteHistoryItem(deleteHistoryButton.dataset.deleteHistoryId);
     return;
   }
 

@@ -33,8 +33,12 @@ SESSION_COOKIE = "neyron_session"
 SESSION_TTL_SECONDS = 60 * 60 * 24
 DEFAULT_USERNAME = os.environ.get("NEYRON_USERNAME", "admin")
 DEFAULT_PASSWORD = os.environ.get("NEYRON_PASSWORD", "admin123")
-TEST_ARTIFACT_FILENAME = "secret.py"
-TEST_ARTIFACT_CODE = 'password="123"'
+OLLAMA_TIMEOUT_SECONDS = float(os.environ.get("OLLAMA_TIMEOUT", "20"))
+GENERATED_TEST_ARTIFACTS = {
+    ("secret.py", 'password="123"'),
+    ("broken.py", "if x==0\n    print\nelse\n    print(5)"),
+    ("quality.py", "from math import *\n\ndef f(list=[]):\n    print\n    assert len(list) > 0\n    return list"),
+}
 DEFAULT_DEMO_CODES = [
     {
         "id": "demo-clean-code",
@@ -500,24 +504,23 @@ class CodeAnalyzer:
         try:
             tree = ast.parse(code, filename=filename)
         except SyntaxError as exc:
-            finding = Finding(
-                "critical",
-                "Sintaksis",
-                "Python sintaksis xatosi",
-                exc.msg,
-                "Ko'rsatilgan qator atrofidagi qavs, ikki nuqta, indent yoki string yopilishini tekshiring.",
-                exc.lineno,
-            )
+            syntax_findings = collect_syntax_findings(code, exc)
+            metrics = base_metrics | {"syntax_ok": False, "complexity": 0}
+            model_summary, model_status = maybe_ollama_summary(code, syntax_findings, metrics, use_model)
+            suggestions = unique_list([finding.fix for finding in syntax_findings])
             return {
                 "filename": filename,
-                "score": 5,
+                "score": max(0, 25 - len(syntax_findings) * 5),
                 "status": "syntax_error",
-                "summary": "Kod hozircha bajariladigan Python sifatida parse bo'lmadi. Avval sintaksis xatosini tuzatish kerak.",
-                "model_summary": None,
-                "model_status": "Sintaksis xatosi sababli o'tkazib yuborildi",
-                "metrics": base_metrics | {"syntax_ok": False},
-                "findings": [asdict(finding)],
-                "suggestions": [finding.fix],
+                "summary": (
+                    f"Kod hozircha bajariladigan Python sifatida parse bo'lmadi. "
+                    f"{len(syntax_findings)} ta sintaksis yoki ehtimoliy yozilish xatosi topildi."
+                ),
+                "model_summary": model_summary,
+                "model_status": model_status,
+                "metrics": metrics,
+                "findings": [asdict(finding) for finding in syntax_findings],
+                "suggestions": suggestions,
                 "optimized_code": "",
                 "elapsed_ms": elapsed_ms(started),
             }
@@ -528,6 +531,8 @@ class CodeAnalyzer:
         findings.extend(unused_import_findings(visitor))
         findings.extend(duplication_findings(code))
         findings.extend(naming_findings(tree))
+        findings.extend(tree_quality_findings(tree))
+        findings.extend(text_quality_findings(code))
         findings = dedupe_findings(findings)
         findings.sort(key=lambda item: (severity_rank(item.severity), item.line or 10**8, item.title))
 
@@ -587,6 +592,10 @@ def verify_password(password: str, expected_hash: str, salt: str) -> bool:
         return False
     actual_hash = hash_password(password, salt)
     return hmac.compare_digest(actual_hash, expected_hash)
+
+
+def is_generated_test_artifact(filename: Any, code: Any) -> bool:
+    return (str(filename), str(code)) in GENERATED_TEST_ARTIFACTS
 
 
 class AuthStore:
@@ -688,6 +697,25 @@ class AuthStore:
         self._save(data)
         return item
 
+    def delete_history_item(self, username: str, history_id: str) -> dict[str, Any]:
+        data = self._load()
+        user = self._ensure_user(data, username)
+        user["history"] = [item for item in user.get("history", []) if str(item.get("id")) != history_id]
+        state = user.get("state", {})
+        saved_id = state.get("last_result", {}).get("saved", {}).get("id") if isinstance(state.get("last_result"), dict) else None
+        if saved_id == history_id:
+            state.pop("last_result", None)
+        self._save(data)
+        return self.snapshot(username)
+
+    def clear_history(self, username: str) -> dict[str, Any]:
+        data = self._load()
+        user = self._ensure_user(data, username)
+        user["history"] = []
+        user.setdefault("state", {}).pop("last_result", None)
+        self._save(data)
+        return self.snapshot(username)
+
     def seed_demo_data(self, username: str = DEFAULT_USERNAME, replace_state: bool = True) -> dict[str, Any]:
         data = self._load()
         self._seed_demo_data(data, username, replace_state=replace_state)
@@ -720,10 +748,13 @@ class AuthStore:
     def _seed_demo_data(self, data: dict[str, Any], username: str, replace_state: bool) -> None:
         user = self._ensure_user(data, username)
         analyzer = CodeAnalyzer()
+        demo_ids = {demo["id"] for demo in DEFAULT_DEMO_CODES}
+        demo_code_keys = {(demo["filename"], demo["code"]) for demo in DEFAULT_DEMO_CODES}
         history = [
             item
             for item in user.get("history", [])
-            if not (item.get("filename") == TEST_ARTIFACT_FILENAME and item.get("code") == TEST_ARTIFACT_CODE)
+            if not is_generated_test_artifact(item.get("filename"), item.get("code"))
+            and not (str(item.get("id", "")) not in demo_ids and (item.get("filename"), item.get("code")) in demo_code_keys)
         ]
         demo_items: list[dict[str, Any]] = []
 
@@ -743,14 +774,14 @@ class AuthStore:
             }
             demo_items.append(item)
 
-        history = [item for item in history if str(item.get("id", "")) not in {demo["id"] for demo in DEFAULT_DEMO_CODES}]
+        history = [item for item in history if str(item.get("id", "")) not in demo_ids]
         for item in reversed(demo_items):
             history.insert(0, item)
         user["history"] = history[:25]
 
         state = user.get("state", {})
         state_is_empty = not state or not state.get("code")
-        state_is_test_artifact = state.get("filename") == TEST_ARTIFACT_FILENAME and state.get("code") == TEST_ARTIFACT_CODE
+        state_is_test_artifact = is_generated_test_artifact(state.get("filename"), state.get("code"))
         if replace_state or state_is_empty or state_is_test_artifact:
             primary = demo_items[0]
             user["state"] = {
@@ -801,6 +832,12 @@ class NeyronHandler(SimpleHTTPRequestHandler):
                 return
             self._json_response(self.auth.snapshot(username))
             return
+        if path == "/api/ollama/status":
+            username = self._require_user()
+            if not username:
+                return
+            self._json_response(ollama_status())
+            return
         if path in APP_ROUTES or path == "/index.html":
             self._serve_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
             return
@@ -828,6 +865,19 @@ class NeyronHandler(SimpleHTTPRequestHandler):
                 return
             payload = self._json_body()
             self._json_response({"ok": True, **self.auth.save_work(username, payload)})
+            return
+        if path == "/api/history/delete":
+            username = self._require_user()
+            if not username:
+                return
+            payload = self._json_body()
+            self._json_response({"ok": True, **self.auth.delete_history_item(username, str(payload.get("id", "")))})
+            return
+        if path == "/api/history/clear":
+            username = self._require_user()
+            if not username:
+                return
+            self._json_response({"ok": True, **self.auth.clear_history(username)})
             return
         if path != "/api/analyze":
             self.send_error(HTTPStatus.NOT_FOUND)
@@ -973,6 +1023,101 @@ def basic_metrics(code: str) -> dict[str, Any]:
     }
 
 
+def collect_syntax_findings(code: str, exc: SyntaxError) -> list[Finding]:
+    findings = [
+        Finding(
+            "critical",
+            "Sintaksis",
+            "Python sintaksis xatosi",
+            exc.msg,
+            "Ko'rsatilgan qator atrofidagi qavs, ikki nuqta, indent yoki string yopilishini tekshiring.",
+            exc.lineno,
+        )
+    ]
+    block_pattern = re.compile(
+        r"^(if|elif|else|for|while|def|class|try|except|finally|with|match|case)\b|^(async\s+(def|for|with))\b"
+    )
+    bracket_balance = {"(": 0, "[": 0, "{": 0}
+
+    for line_no, line in enumerate(code.splitlines(), start=1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        for char in stripped:
+            if char in bracket_balance:
+                bracket_balance[char] += 1
+            elif char == ")":
+                bracket_balance["("] -= 1
+            elif char == "]":
+                bracket_balance["["] -= 1
+            elif char == "}":
+                bracket_balance["{"] -= 1
+
+        if block_pattern.search(stripped) and not stripped.endswith(":"):
+            keyword = stripped.split()[0]
+            findings.append(
+                Finding(
+                    "critical",
+                    "Sintaksis",
+                    "Block oxirida ikki nuqta yo'q",
+                    f"`{keyword}` bilan boshlangan qatorda `:` belgisi yetishmaydi.",
+                    f"{line_no}-qatorda shart yoki block oxiriga `:` qo'shing.",
+                    line_no,
+                )
+            )
+
+        if stripped == "print" or re.match(r"^print\s+[^(\s]", stripped):
+            findings.append(
+                Finding(
+                    "medium",
+                    "Yozilish",
+                    "`print` chaqiruvi to'liq emas",
+                    "`print` funksiyasi argument bilan chaqirilmagan yoki Python 2 uslubida yozilgan.",
+                    "`print(...)` shaklida yozing, masalan `print(x)`.",
+                    line_no,
+                )
+            )
+
+        if stripped.endswith("="):
+            findings.append(
+                Finding(
+                    "critical",
+                    "Sintaksis",
+                    "Assign qiymati yo'q",
+                    "Tenglik belgisidan keyin qiymat yozilmagan.",
+                    "O'zgaruvchiga qiymat bering yoki ortiqcha `=` belgisini olib tashlang.",
+                    line_no,
+                )
+            )
+
+    for bracket, balance in bracket_balance.items():
+        if balance > 0:
+            findings.append(
+                Finding(
+                    "critical",
+                    "Sintaksis",
+                    "Yopilmagan qavs",
+                    f"`{bracket}` qavsi ochilgan, lekin mos yopuvchi qavs topilmadi.",
+                    "Qavslar juftligini tekshiring va yopuvchi qavsni qo'shing.",
+                    None,
+                )
+            )
+        elif balance < 0:
+            findings.append(
+                Finding(
+                    "critical",
+                    "Sintaksis",
+                    "Ortiqcha yopuvchi qavs",
+                    "Kodda yopuvchi qavs ochuvchi qavsdan ko'p.",
+                    "Ortiqcha yopuvchi qavsni olib tashlang yoki ochuvchi qavsni qo'shing.",
+                    None,
+                )
+            )
+
+    return dedupe_findings(findings)
+
+
 def cyclomatic_complexity(node: ast.AST) -> int:
     complexity = 1
     decision_nodes = (
@@ -1066,6 +1211,159 @@ def naming_findings(tree: ast.AST) -> list[Finding]:
     return findings
 
 
+def tree_quality_findings(tree: ast.AST) -> list[Finding]:
+    findings: list[Finding] = []
+    builtin_names = {"list", "dict", "set", "str", "int", "float", "type", "id", "input", "file", "sum", "max", "min"}
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            defaults = list(node.args.defaults) + [item for item in node.args.kw_defaults if item is not None]
+            for default in defaults:
+                if isinstance(default, (ast.List, ast.Dict, ast.Set)):
+                    findings.append(
+                        Finding(
+                            "high",
+                            "Sifat",
+                            "Mutable default argument",
+                            f"`{node.name}` funksiyasida list/dict/set default qiymat sifatida ishlatilgan.",
+                            "Default qiymatni `None` qiling va funksiya ichida yangi list/dict/set yarating.",
+                            node.lineno,
+                        )
+                    )
+
+            public_function = not node.name.startswith("_") and node.name != "__init__"
+            if public_function and node.returns is None:
+                findings.append(
+                    Finding(
+                        "low",
+                        "Standart",
+                        "Return type hint yo'q",
+                        f"`{node.name}` funksiyasida qaytish turi ko'rsatilmagan.",
+                        "Funksiya imzosiga return annotation qo'shing, masalan `-> int` yoki `-> None`.",
+                        node.lineno,
+                    )
+                )
+
+            for argument in list(node.args.args) + list(node.args.kwonlyargs):
+                if argument.arg in builtin_names:
+                    findings.append(
+                        Finding(
+                            "low",
+                            "Standart",
+                            "Built-in nom soya qilinmoqda",
+                            f"`{argument.arg}` Python built-in nomi bilan bir xil.",
+                            "Argument yoki o'zgaruvchi nomini aniqroq qiling, masalan `items`, `user_id`, `values`.",
+                            argument.lineno,
+                        )
+                    )
+
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                name = full_name(target)
+                if name in builtin_names:
+                    findings.append(
+                        Finding(
+                            "low",
+                            "Standart",
+                            "Built-in nom qayta ishlatilgan",
+                            f"`{name}` Python built-in nomini soya qilmoqda.",
+                            "O'zgaruvchi nomini aniqroq va xavfsizroq nomga almashtiring.",
+                            getattr(node, "lineno", None),
+                        )
+                    )
+
+        if isinstance(node, ast.Assert):
+            findings.append(
+                Finding(
+                    "medium",
+                    "Barqarorlik",
+                    "`assert` production tekshiruv sifatida ishlatilgan",
+                    "Python optimallashtirilgan rejimda assert operatorlarini olib tashlashi mumkin.",
+                    "Runtime validatsiya uchun aniq `if ...: raise ValueError(...)` ishlating.",
+                    node.lineno,
+                )
+            )
+
+        if isinstance(node, ast.ImportFrom) and any(alias.name == "*" for alias in node.names):
+            findings.append(
+                Finding(
+                    "medium",
+                    "Sifat",
+                    "Wildcard import",
+                    "`from module import *` kodni noaniq qiladi va nomlar to'qnashuviga olib keladi.",
+                    "Faqat kerakli nomlarni aniq import qiling.",
+                    node.lineno,
+                )
+            )
+
+        if isinstance(node, ast.Call) and full_name(node.func) == "print":
+            findings.append(
+                Finding(
+                    "low",
+                    "Sifat",
+                    "Debug `print` chaqiruvi",
+                    "`print` production kodda nazorat qilinmaydigan chiqish hosil qiladi.",
+                    "Monitoring uchun `logging` modulidan foydalaning yoki debug printni olib tashlang.",
+                    node.lineno,
+                )
+            )
+
+    return findings
+
+
+def text_quality_findings(code: str) -> list[Finding]:
+    findings: list[Finding] = []
+    for line_no, line in enumerate(code.splitlines(), start=1):
+        stripped = line.strip()
+        upper = stripped.upper()
+        if len(line) > 100:
+            findings.append(
+                Finding(
+                    "low",
+                    "Standart",
+                    "Qator juda uzun",
+                    f"{line_no}-qator {len(line)} belgidan iborat.",
+                    "Qatorni kichikroq ifodalarga ajrating yoki helper o'zgaruvchi ishlating.",
+                    line_no,
+                )
+            )
+        if line.rstrip() != line:
+            findings.append(
+                Finding(
+                    "low",
+                    "Standart",
+                    "Qator oxirida bo'sh joy bor",
+                    "Trailing whitespace diff va formatlashda keraksiz shovqin beradi.",
+                    "Qator oxiridagi ortiqcha bo'sh joylarni olib tashlang.",
+                    line_no,
+                )
+            )
+        if "\t" in line[: len(line) - len(line.lstrip())]:
+            findings.append(
+                Finding(
+                    "low",
+                    "Standart",
+                    "Tab indent ishlatilgan",
+                    "Tab va space aralashishi Python indent xatolariga olib kelishi mumkin.",
+                    "PEP 8 bo'yicha 4 ta space ishlating.",
+                    line_no,
+                )
+            )
+        if "TODO" in upper or "FIXME" in upper:
+            findings.append(
+                Finding(
+                    "low",
+                    "Texnik qarz",
+                    "TODO/FIXME izohi qolgan",
+                    "Kodda keyin bajarilishi kerak bo'lgan ish belgisi bor.",
+                    "TODO/FIXME uchun aniq issue oching yoki kodni yakunlang.",
+                    line_no,
+                )
+            )
+    return findings
+
+
 def dedupe_findings(findings: list[Finding]) -> list[Finding]:
     seen: set[tuple[Any, ...]] = set()
     unique: list[Finding] = []
@@ -1075,6 +1373,17 @@ def dedupe_findings(findings: list[Finding]) -> list[Finding]:
             continue
         seen.add(key)
         unique.append(finding)
+    return unique
+
+
+def unique_list(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        unique.append(item)
     return unique
 
 
@@ -1098,7 +1407,7 @@ def calculate_score(findings: list[Finding], metrics: dict[str, Any]) -> int:
 
 def build_suggestions(findings: list[Finding], metrics: dict[str, Any], functions: list[dict[str, Any]]) -> list[str]:
     suggestions: list[str] = []
-    for finding in findings[:5]:
+    for finding in findings:
         if finding.fix not in suggestions:
             suggestions.append(finding.fix)
     if metrics.get("max_loop_depth", 0) >= 2:
@@ -1109,7 +1418,7 @@ def build_suggestions(findings: list[Finding], metrics: dict[str, Any], function
         suggestions.append(f"{names} funksiyalarida shartlarni kichik funksiyalarga ajratish foydali bo'ladi.")
     if not suggestions:
         suggestions.append("Kod umumiy ko'rinishda toza. Testlar va type hintlar bilan barqarorlikni yanada oshirish mumkin.")
-    return suggestions[:6]
+    return suggestions
 
 
 def build_summary(score: int, findings: list[Finding], metrics: dict[str, Any]) -> str:
@@ -1167,11 +1476,12 @@ def maybe_ollama_summary(
     host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
     model = os.environ.get("NEYRON_MODEL", "qwen2.5-coder")
     prompt = (
-        "Sen Python kod tahlilchisisen. Uzbek tilida 3 ta qisqa bandda xulosa ber: "
-        "1) asosiy muammo, 2) optimallashtirish, 3) xavfsizlik. "
-        "Juda qisqa yoz.\n\n"
+        "Sen Python kod tahlilchisisen. Uzbek tilida AI tavsiya ber. "
+        "Barcha topilgan xatolarni qator raqami bilan sanab chiq, har biriga aniq yechim yoz. "
+        "Agar sintaksis xatosi bo'lsa, kodni ishga tushadigan holatga keltirish tartibini ko'rsat. "
+        "Javobni qisqa, amaliy va bandlar ko'rinishida yoz.\n\n"
         f"Metriclar: {json.dumps(metrics, ensure_ascii=False)}\n"
-        f"Topilmalar: {json.dumps([asdict(item) for item in findings[:8]], ensure_ascii=False)}\n"
+        f"Topilmalar: {json.dumps([asdict(item) for item in findings], ensure_ascii=False)}\n"
         f"Kod:\n{code[:5000]}"
     )
     body = json.dumps(
@@ -1179,7 +1489,7 @@ def maybe_ollama_summary(
             "model": model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.2, "num_predict": 180},
+            "options": {"temperature": 0.2, "num_predict": 320},
         }
     ).encode("utf-8")
     request = urllib.request.Request(
@@ -1189,7 +1499,7 @@ def maybe_ollama_summary(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=2.2) as response:
+        with urllib.request.urlopen(request, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
             text = str(payload.get("response", "")).strip()
             if text:
@@ -1199,6 +1509,42 @@ def maybe_ollama_summary(
         return None, "Ollama topilmadi, qoidaviy tahlil ishladi"
     except Exception as exc:  # noqa: BLE001 - optional model must not break analyzer.
         return None, f"Model xatosi: {exc}"
+
+
+def ollama_status() -> dict[str, Any]:
+    host = os.environ.get("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
+    selected_model = os.environ.get("NEYRON_MODEL", "qwen2.5-coder")
+    request = urllib.request.Request(f"{host}/api/tags", method="GET")
+    try:
+        with urllib.request.urlopen(request, timeout=3) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+            models = [item.get("name", "") for item in payload.get("models", []) if item.get("name")]
+            return {
+                "ok": True,
+                "host": host,
+                "selected_model": selected_model,
+                "models": models,
+                "model_ready": any(name.split(":")[0] == selected_model.split(":")[0] for name in models),
+                "message": "Ollama ishlayapti.",
+            }
+    except (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError):
+        return {
+            "ok": False,
+            "host": host,
+            "selected_model": selected_model,
+            "models": [],
+            "model_ready": False,
+            "message": "Ollama topilmadi. `ollama serve` ishga tushiring.",
+        }
+    except Exception as exc:  # noqa: BLE001 - status endpoint should stay JSON.
+        return {
+            "ok": False,
+            "host": host,
+            "selected_model": selected_model,
+            "models": [],
+            "model_ready": False,
+            "message": f"Ollama tekshiruvida xato: {exc}",
+        }
 
 
 def elapsed_ms(started: float) -> int:

@@ -336,6 +336,37 @@ h3 {
   font-size: 13px;
 }
 
+.mini-actions,
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.filter-bar {
+  margin: 12px 0 14px;
+}
+
+.filter-button {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.055);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.filter-button.active,
+.filter-button:hover {
+  color: var(--text);
+  border-color: rgba(69, 216, 255, 0.35);
+  background: rgba(69, 216, 255, 0.14);
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(340px, 0.9fr);
@@ -846,6 +877,14 @@ textarea:focus {
   margin-top: 4px;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.history-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 @media (max-width: 1100px) {
